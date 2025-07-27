@@ -181,7 +181,7 @@ class UniversalScraper {
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1'
       },
-      timeout: 15000 // Increased timeout
+      timeout: 15000
     });
     const content = this.extractContentCheerio(data);
     return { content, html: data };
@@ -229,8 +229,7 @@ class UniversalScraper {
   private extractContentCheerio(html: string): string {
     const $ = cheerio.load(html);
     $('script, style, nav, header, footer, aside, .advertisement, .ad, .sidebar').remove();
-    
-    // Try multiple selectors to find content
+
     const contentSelectors = [
       'article', 'main', '.content', '.post', '.entry', 
       '.article-content', '.post-content', '.entry-content',
@@ -240,10 +239,9 @@ class UniversalScraper {
     let content = '';
     for (const selector of contentSelectors) {
       content = $(selector).first().text();
-      if (content && content.length > 200) break; // If we found substantial content, use it
+      if (content && content.length > 200) break;
     }
     
-    // Fallback to body if nothing else worked
     if (!content || content.length < 100) {
       content = $('body').text();
     }
@@ -258,7 +256,6 @@ class UniversalScraper {
       const article = reader.parse();
       return article?.textContent ? article.textContent.replace(/\s+/g, ' ').trim() : '';
     } catch (error) {
-      // Fallback to cheerio if Readability fails
       return this.extractContentCheerio(html);
     }
   }
@@ -269,13 +266,11 @@ class UniversalScraper {
       const $ = cheerio.load(html);
       title = $('h1').first().text().trim() || $('title').text().trim() || 'No Title';
     } catch (error) {
-      // Fallback if HTML parsing fails
       title = 'No Title';
     }
     
     const cleanedContent = content.substring(0, 8000);
     const wordCount = cleanedContent.split(/\s+/).length;
-    // More generous relevance scoring - minimum 0.3 for any content over 100 words
     const relevanceScore = Math.max(0.3, Math.min(0.9, wordCount / 800));
 
     return {
@@ -293,70 +288,11 @@ class UniversalScraper {
 }
 
 async function generateSynonyms(originalQuery: string): Promise<SynonymResponse> {
-  const currentFullDate = new Date().toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric'
-  });
-
-  const synonymPrompt = `You are a creative cryptocurrency research assistant. Generate DIVERSE and VARIED search queries for comprehensive market analysis.
-
-Today's date is ${currentFullDate}. Always include current month/year for recent data.
-
-## CREATIVITY REQUIREMENTS:
-1. **VARY THE LANGUAGE**: Use different terminology (crypto/digital asset/blockchain/token)
-2. **DIVERSE PERSPECTIVES**: Include price action, news, sentiment, fundamentals, institutional activity
-3. **MULTIPLE TIMEFRAMES**: Recent events, predictions, historical patterns, breaking news
-4. **VARIED SOURCES**: Target different platforms (news, analysis, social media, institutional reports)
-5. **CREATIVE ANGLES**: Market sentiment, whale activity, development updates, regulatory news
-
-## RESPONSE FORMAT:
-Return ONLY a valid JSON object with numbered queries:
-{
-  "1": "query one",
-  "2": "query two", 
-  "3": "query three",
-  ...
-}
-
-## ENHANCED EXAMPLES:
-
-Single Asset (Bitcoin):
-{
-  "1": "Bitcoin price analysis July 2025",
-  "2": "BTC whale movements institutional buying July 2025",
-  "3": "Bitcoin breaking news regulatory updates July 2025"
-}
-
-Multiple Assets (Bitcoin and Ethereum):
-{
-  "1": "Bitcoin price surge July 2025 latest news",
-  "2": "BTC market sentiment institutional adoption July 2025", 
-  "3": "Bitcoin technical analysis support resistance July 2025",
-  "4": "Ethereum price prediction August 2025 outlook",
-  "5": "ETH network upgrades development news July 2025",
-  "6": "Ethereum vs Bitcoin performance comparison July 2025"
-}
-
-## INSTRUCTIONS FOR MULTIPLE ASSETS:
-For the query: "${originalQuery}"
-
-Generate 2-3 UNIQUE queries per asset mentioned, ensuring:
-- Each query uses DIFFERENT keywords and perspectives
-- Include varied aspects: price, news, analysis, sentiment, predictions, whale activity
-- Mix formal terms (Bitcoin) with common terms (BTC)
-- Target different timeframes and information types
-- For ALL tokens: Include ticker symbols, full project names, alternative names, and trading pairs
-- Research lesser-known tokens with multiple naming variations (official name, ticker, project name)
-- Avoid repetitive patterns like "X technical analysis", "X chart patterns", "X support resistance"
-
-IMPORTANT: Be creative and avoid formulaic patterns. Each query should feel unique and target different information sources.`;
-
   const openaiAgent = await AgentBuilder
     .create("synonym_generator")
     .withModel(openai("gpt-4o"))
     .withDescription("Creative cryptocurrency research query generator")
-    .withInstruction(synonymPrompt)
+    .withInstruction(systemPrompt)
     .build();
 
   const result = await openaiAgent.runner.ask(`Generate synonym search queries for: "${originalQuery}"`);
@@ -383,7 +319,7 @@ IMPORTANT: Be creative and avoid formulaic patterns. Each query should feel uniq
   }
 
   return {
-    synonyms: synonyms.slice(0, 12), // Increase from 10 to 12 to get all generated synonyms
+    synonyms: synonyms.slice(0, 12),
     originalQuery
   };
 }
@@ -399,7 +335,7 @@ async function searchWithExa(queries: string[]): Promise<{ urls: string[], resul
   const exa = new Exa(process.env.EXA_API_KEY!);
   const searchOptions: any = {
     type: "auto",
-    numResults: 3, // Increase from 2 to 3 for better coverage
+    numResults: 3,
     text: false,
     summary: true
   };
@@ -418,7 +354,7 @@ async function searchWithExa(queries: string[]): Promise<{ urls: string[], resul
         url: item.url,
         title: item.title || 'No Title',
         publishedDate: item.publishedDate || 'Unknown Date',
-        query: query // Track which query this came from
+        query: query
       }));
     } catch (error) {
       console.log(`⚠️ Search failed for query: "${query}"`);
@@ -429,21 +365,18 @@ async function searchWithExa(queries: string[]): Promise<{ urls: string[], resul
   const searchResults = await Promise.all(searchPromises);
   const allResults = searchResults.flat();
   
-  // Remove duplicates based on URL
   const uniqueResults = allResults.filter((result, index, self) => 
     index === self.findIndex(r => r.url === result.url)
   );
   
-  const finalResults = uniqueResults.slice(0, 15); // Increase to 15 for better coverage
+  const finalResults = uniqueResults.slice(0, 15);
   
-  // Sort by publication date in descending order (most recent first)
   finalResults.sort((a, b) => {
     const dateA = new Date(a.publishedDate || '1900-01-01');
     const dateB = new Date(b.publishedDate || '1900-01-01');
     return dateB.getTime() - dateA.getTime();
   });
   
-  // Log all URLs with their publication dates (now sorted by date)
   console.log('\n📰 Found URLs sorted by publication date (newest first):');
   finalResults.forEach((result, index) => {
     const publishDate = result.publishedDate !== 'Unknown Date' ? 
@@ -467,9 +400,8 @@ async function searchWithExa(queries: string[]): Promise<{ urls: string[], resul
 }
 
 function sortContentNaturally(contents: ScrapedContent[]): ScrapedContent[] {
-  // Lower the threshold to include more content, especially for lesser-known tokens
   return contents
-    .filter(content => content.metadata.relevanceScore >= 0.1) // Reduced from 0.2 to 0.1
+    .filter(content => content.metadata.relevanceScore >= 0.1)
     .sort((a, b) => b.metadata.relevanceScore - a.metadata.relevanceScore);
 }
 
@@ -601,14 +533,12 @@ function extractCryptoTokens(query: string): Array<{name: string, patterns: RegE
     { name: 'synthetix', patterns: [/synthetix|snx(?!\w)/i] },
     { name: 'iq', patterns: [/iq[\s\-\_]?token|iq.*crypto|everipedia|iq(?!\w)/i] },
     { name: 'pear', patterns: [/pear[\s\-\_]?protocol|pear[\s\-\_]?token|pearusdt|pear.*crypto|pear(?!\w)/i] },
-    // Add more patterns as needed
   ];
   
   const detectedTokens = cryptoPatterns.filter(crypto => 
     crypto.patterns.some(pattern => pattern.test(query))
   );
   
-  // If no known tokens detected, try to extract potential token names from the query
   if (detectedTokens.length === 0) {
     const words = query.toLowerCase().match(/\b[a-z]{2,20}\b/g) || [];
     const potentialTokens = words.filter(word => 
@@ -633,7 +563,6 @@ async function searchForMissingTokens(missingTokens: Array<{name: string, patter
   const additionalContents: ScrapedContent[] = [];
   
   for (const token of missingTokens) {
-    // Create more specific search queries for missing tokens
     const specificQueries = [
       `${token.name} cryptocurrency price analysis July 2025`,
       `${token.name} token market trends technical analysis`,
@@ -655,7 +584,6 @@ async function searchForMissingTokens(missingTokens: Array<{name: string, patter
         console.log(`✅ Specific search "${query}" returned ${result.results.length} results`);
         
         for (const item of result.results) {
-          // Skip if we already have this URL
           if (existingUrls.includes(item.url)) {
             continue;
           }
@@ -668,9 +596,9 @@ async function searchForMissingTokens(missingTokens: Array<{name: string, patter
             
             if (hasTokenContent) {
               additionalContents.push(scrapedContent);
-              existingUrls.push(item.url); // Add to existing URLs to avoid duplicates
+              existingUrls.push(item.url);
               console.log(`✅ Found relevant content for ${token.name}: ${scrapedContent.title}`);
-              break; // Found good content for this token, move to next
+              break;
             } else {
               console.log(`⚠️ Content doesn't contain ${token.name} information, skipping...`);
             }
@@ -679,7 +607,6 @@ async function searchForMissingTokens(missingTokens: Array<{name: string, patter
           }
         }
         
-        // If we found content for this token, break out of query loop
         if (additionalContents.some(content => 
           token.patterns.some(pattern => 
             pattern.test(content.title + ' ' + content.cleanedContent)
@@ -712,12 +639,10 @@ async function main() {
     let scrapedContents = await scraper.scrapeMultiple(searchResult.urls);
     console.log(`Scraped ${scrapedContents.length} sources successfully`);
     
-    // Debug: Show which URLs failed to scrape
     if (scrapedContents.length < searchResult.urls.length) {
       console.log(`⚠️ Failed to scrape ${searchResult.urls.length - scrapedContents.length} URLs`);
     }
-    
-    // Dynamic token coverage detection based on user query
+
     const detectedTokens = extractCryptoTokens(userQuery);
     console.log(`🔍 Detected tokens from query: ${detectedTokens.map(t => t.name).join(', ')}`);
     
@@ -732,23 +657,20 @@ async function main() {
     });
     console.log('🎯 Initial token coverage in scraped content:', tokenCoverage);
     
-    // Find tokens with zero or insufficient coverage
     const missingTokens = detectedTokens.filter(token => {
       const coverage = tokenCoverage[token.name] || 0;
-      return coverage === 0; // Search for tokens with zero coverage
+      return coverage === 0;
     });
     
-    // If we have missing tokens, search specifically for them
     if (missingTokens.length > 0) {
       console.log(`\n⚠️ Found ${missingTokens.length} tokens with insufficient coverage. Searching specifically...`);
-      const existingUrls = searchResult.urls.slice(); // Copy existing URLs
+      const existingUrls = searchResult.urls.slice();
       const additionalContents = await searchForMissingTokens(missingTokens, existingUrls);
       
       if (additionalContents.length > 0) {
         scrapedContents = [...scrapedContents, ...additionalContents];
         console.log(`✅ Added ${additionalContents.length} additional sources for missing tokens`);
         
-        // Recalculate token coverage
         detectedTokens.forEach(token => {
           const count = scrapedContents.filter(c => 
             token.patterns.some(pattern => 
