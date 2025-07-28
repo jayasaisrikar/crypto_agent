@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 
-const userQuery = "I want Technical Analysis for IQ Token, PEAR and Dogecoin (DOGE) and Bitcoin (BTC)";
+const userQuery = "Do you have some analysis on PEAR Protocol recent launch and its impact on PEAR Token?";
 
 const systemPrompt = `You are a helpful assistant specialized in cryptocurrency insights. Your task is to generate synonym search queries based on the user's question, but only if the question is related to cryptocurrencies like Bitcoin, Ethereum, or any crypto tickers (such as BTC, ETH, SOL, etc.).
 
@@ -319,7 +319,7 @@ async function generateSynonyms(originalQuery: string): Promise<SynonymResponse>
   }
 
   return {
-    synonyms: synonyms.slice(0, 12),
+    synonyms,
     originalQuery
   };
 }
@@ -331,6 +331,49 @@ interface ExaResult {
   query?: string;
 }
 
+// Helper: Batch process with rate limit and exponential backoff
+async function batchProcessWithRateLimit<T, R>(
+  items: T[],
+  batchSize: number,
+  fn: (item: T) => Promise<R>,
+  minDelayMs: number = 1000,
+  maxRetries: number = 4
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map(async (item) => {
+        let attempt = 0;
+        let delay = 1000;
+        while (true) {
+          try {
+            return await fn(item);
+          } catch (err: any) {
+            if (err?.response?.status === 429 || (err?.message && /rate.?limit/i.test(err.message))) {
+              if (attempt < maxRetries) {
+                attempt++;
+                console.warn(`⏳ Rate limit hit, retrying in ${delay}ms (attempt ${attempt})...`);
+                await new Promise(res => setTimeout(res, delay));
+                delay *= 2;
+                continue;
+              }
+            }
+            // Other errors or max retries
+            console.warn(`❌ Query failed after ${attempt} retries:`, err?.message || err);
+            return null;
+          }
+        }
+      })
+    );
+    results.push(...batchResults);
+    if (i + batchSize < items.length) {
+      await new Promise(res => setTimeout(res, minDelayMs));
+    }
+  }
+  return results;
+}
+
 async function searchWithExa(queries: string[]): Promise<{ urls: string[], results: ExaResult[] }> {
   const exa = new Exa(process.env.EXA_API_KEY!);
   const searchOptions: any = {
@@ -340,43 +383,44 @@ async function searchWithExa(queries: string[]): Promise<{ urls: string[], resul
     summary: true
   };
 
-  console.log(`\n🔍 Sending ${queries.length} queries to Exa:`);
+  console.log(`\n🔍 Sending ${queries.length} queries to Exa (batching, max 5/sec):`);
   queries.forEach((query, index) => {
     console.log(`${index + 1}. "${query}"`);
   });
   console.log('');
 
-  const searchPromises = queries.map(async (query) => {
-    try {
-      const result = await exa.searchAndContents(query, searchOptions);
-      console.log(`✅ Query "${query}" returned ${result.results.length} results`);
-      return result.results.map((item: any) => ({
-        url: item.url,
-        title: item.title || 'No Title',
-        publishedDate: item.publishedDate || 'Unknown Date',
-        query: query
-      }));
-    } catch (error) {
-      console.log(`⚠️ Search failed for query: "${query}"`);
-      return [];
-    }
-  });
+  // Batch process with 5 per second
+  const batchResults = await batchProcessWithRateLimit(
+    queries,
+    5,
+    async (query) => {
+      try {
+        const result = await exa.searchAndContents(query, searchOptions);
+        console.log(`✅ Query "${query}" returned ${result.results.length} results`);
+        return result.results.map((item: any) => ({
+          url: item.url,
+          title: item.title || 'No Title',
+          publishedDate: item.publishedDate || 'Unknown Date',
+          query: query
+        }));
+      } catch (error) {
+        console.log(`⚠️ Search failed for query: "${query}"`);
+        return [];
+      }
+    },
+    1000 // 1 second between batches
+  );
 
-  const searchResults = await Promise.all(searchPromises);
-  const allResults = searchResults.flat();
-  
+  const allResults = batchResults.flat().filter(Boolean).flat();
   const uniqueResults = allResults.filter((result, index, self) => 
     index === self.findIndex(r => r.url === result.url)
   );
-  
   const finalResults = uniqueResults.slice(0, 15);
-  
   finalResults.sort((a, b) => {
     const dateA = new Date(a.publishedDate || '1900-01-01');
     const dateB = new Date(b.publishedDate || '1900-01-01');
     return dateB.getTime() - dateA.getTime();
   });
-  
   console.log('\n📰 Found URLs sorted by publication date (newest first):');
   finalResults.forEach((result, index) => {
     const publishDate = result.publishedDate !== 'Unknown Date' ? 
@@ -392,7 +436,6 @@ async function searchWithExa(queries: string[]): Promise<{ urls: string[], resul
     console.log(`   Published: ${publishDate}`);
     console.log('');
   });
-  
   return {
     urls: finalResults.map(r => r.url),
     results: finalResults
@@ -628,10 +671,10 @@ async function main() {
     console.log(`Processing query: "${userQuery}"`);
     
     const synonymResponse = await generateSynonyms(userQuery);
-    console.log(`Generated ${synonymResponse.synonyms.length} synonyms`);
+    console.log(`Total synonyms parsed from model: ${synonymResponse.synonyms.length}`);
     console.log('📝 Synonyms:', synonymResponse.synonyms);
-    
     const searchQueries = [userQuery, ...synonymResponse.synonyms];
+    console.log(`Will send ${searchQueries.length} queries to Exa (including original query).`);
     const searchResult = await searchWithExa(searchQueries);
     console.log(`Found ${searchResult.urls.length} URLs`);
     
