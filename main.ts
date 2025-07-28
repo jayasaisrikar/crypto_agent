@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 
-const userQuery = "Do you have some analysis on PEAR Protocol recent launch and its impact on PEAR Token?";
+const userQuery = "I want Technical analysis on Shiba Inu and Dogecoin";
 
 const systemPrompt = `You are a helpful assistant specialized in cryptocurrency insights. Your task is to generate synonym search queries based on the user's question, but only if the question is related to cryptocurrencies like Bitcoin, Ethereum, or any crypto tickers (such as BTC, ETH, SOL, etc.).
 
