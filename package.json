@@ -3,15 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.js",
+    "dev": "tsx watch src/index.js",
     "build": "tsc",
-    "news-service": "tsx src/news-service.ts",
-    "setup-qdrant": "powershell -ExecutionPolicy Bypass -File .\\setup-qdrant-simple.ps1",
-    "test:scraper": "tsx -e \"import('./src/services/scraper.js').then(async m => { const s = new m.UniversalScraper(); const result = await s.scrapeUrl('https://cointelegraph.com'); console.log(JSON.stringify(result, null, 2)); })\"",
-    "test:synonym": "tsx src/test-synonym.ts",
-    "test:main-agent": "tsx src/test-main-crypto-agent.ts",
-    "demo:synonym": "tsx src/demo-synonym.ts"
+    "test:scraper": "tsx -e \"import('./src/services/scraper.js').then(async m => { const s = new m.UniversalScraper(); const result = await s.scrapeUrl('https://cointelegraph.com'); console.log(JSON.stringify(result, null, 2)); })\""
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",
