@@ -1,6 +1,6 @@
-# Cryptocurrency Price Movement Analysis Agent
+# Cryptocurrency Analysis Agent
 
-A sophisticated multi-agent system for analyzing cryptocurrency price movements using Google Gemini AI and Qdrant vector database for enhanced contextual insights.
+A sophisticated cryptocurrency analysis system that generates comprehensive technical and fundamental analysis using AI-powered synonym generation, web scraping, and multi-source data aggregation.
 
 ## Features
 
@@ -49,43 +49,60 @@ npm install
 
 Create `.env` file:
 ```env
-GOOGLE_API_KEY=your_google_api_key_here
+# Required API Keys
+OPENAI_API_KEY=your_openai_api_key_here
+EXASEARCH_API_KEY=your_exa_search_api_key_here
+GOOGLE_GENERATIVE_AI_API_KEY=your_google_api_key_here
+
+# Optional Configuration
 LLM_MODEL=gemini-2.5-flash
-TWITTER_BEARER_TOKEN=your_twitter_token_here
 ```
 
-### 4. Set Up Qdrant Vector Database
-
-```bash
-# Start Qdrant using the included script
-npm run setup-qdrant
-
-# Or manually with Docker
-docker run -d --name crypto-qdrant -p 6333:6333 qdrant/qdrant:latest
-```
-
-### 5. Test Embeddings (Optional)
-
-```bash
-npm run test:gemini-embeddings
-```
-
-### 6. Run the Agent
+### 4. Run the Agent
 
 ```bash
 npm start
+```
+
+Or with a custom query:
+```bash
+npm start "Analyze Bitcoin and Ethereum price trends"
+```
+
+## Project Structure
+
+```
+crypto_agent/
+├── index.ts                    # Main entry point
+├── main.ts                     # Original monolithic version
+├── src/                        # Modular source code
+│   ├── config/
+│   │   └── prompts.ts         # AI prompts configuration
+│   ├── services/              # Core business logic
+│   │   ├── analysis.ts        # Final analysis generation
+│   │   ├── scraper.ts         # Universal web scraper
+│   │   ├── search.ts          # Exa search integration
+│   │   └── synonym-generator.ts # AI synonym generation
+│   ├── types/
+│   │   └── index.ts           # TypeScript type definitions
+│   ├── utils/
+│   │   ├── crypto-tokens.ts   # Crypto token definitions
+│   │   └── token-extractor.ts # Token extraction utilities
+│   └── index.ts               # Modular main function
+├── package.json
+├── tsconfig.json
+└── README.md
 ```
 
 ## Available Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm start` | Run the complete crypto analysis agent |
+| `npm start` | Run the modular crypto analysis agent |
 | `npm run dev` | Run in development mode with auto-reload |
-| `npm run setup-qdrant` | Set up Qdrant vector database |
-| `npm run test:gemini-embeddings` | Test Gemini embeddings with Qdrant |
-| `npm run news-service` | Run only the news ingestion service |
-| `npm run test-news` | Test news scraping functionality |
+| `npm run build` | Build TypeScript to JavaScript |
+| `npm run analyze` | Run the original monolithic version |
+| `npm test` | Run with a test Bitcoin query |
 
 ## Architecture
 

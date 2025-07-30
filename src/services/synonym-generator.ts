@@ -224,3 +224,9 @@ Sorry, please ask about crypto-related insights.
     return Array.from(all);
   }
 }
+
+// Convenience function for easy import
+export async function generateSynonyms(query: string, options: SynonymOptions = {}): Promise<SynonymResponse> {
+  const generator = new SynonymGenerator();
+  return generator.generateSynonyms(query, options);
+}

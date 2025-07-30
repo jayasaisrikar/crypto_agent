@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "tsx index.ts",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "analyze": "tsx main.ts"
+    "analyze": "tsx main.ts",
+    "test": "tsx index.ts \"Bitcoin price analysis\""
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",

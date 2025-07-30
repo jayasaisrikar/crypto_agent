@@ -1,9 +1,9 @@
 import "dotenv/config";
-import { generateSynonyms } from "./services/synonym-generator.js";
-import { searchWithExa, searchForMissingTokens } from "./services/search.js";
-import { UniversalScraper } from "./services/scraper.js";
-import { generateFinalAnalysis } from "./services/analysis.js";
-import { extractCryptoTokens } from "./utils/token-extractor.js";
+import { generateSynonyms } from "./services/synonym-generator";
+import { searchWithExa, searchForMissingTokens } from "./services/search";
+import { UniversalScraper } from "./services/scraper";
+import { generateFinalAnalysis } from "./services/analysis";
+import { extractCryptoTokens } from "./utils/token-extractor";
 
 // Default query if none is provided
 const DEFAULT_QUERY = "I want Technical analysis on Shiba Inu and Dogecoin";
@@ -99,7 +99,7 @@ export async function processCryptoQuery(userQuery: string = DEFAULT_QUERY): Pro
 }
 
 // Run the main function if this file is executed directly
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   // Get query from command line arguments or use default
   const userQuery = process.argv[2] || DEFAULT_QUERY;
   processCryptoQuery(userQuery);
