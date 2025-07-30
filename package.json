@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.js",
-    "dev": "tsx watch src/index.js",
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "test:scraper": "tsx -e \"import('./src/services/scraper.js').then(async m => { const s = new m.UniversalScraper(); const result = await s.scrapeUrl('https://cointelegraph.com'); console.log(JSON.stringify(result, null, 2)); })\""
+    "analyze": "tsx main.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",
