@@ -1,76 +1,86 @@
+
 import "dotenv/config";
 import { generateSynonyms } from "./services/synonym-generator.js";
 import { searchWithExa, searchForMissingTokens } from "./services/search.js";
 import { UniversalScraper } from "./services/scraper.js";
 import { generateFinalAnalysis } from "./services/analysis.js";
 import { extractCryptoTokens } from "./utils/token-extractor.js";
+import axios from "axios";
 
-// Default query if none is provided
 const DEFAULT_QUERY = "I want Technical analysis on Shiba Inu and Dogecoin";
 
-/**
- * Main function to process a crypto query
- */
-export async function processCryptoQuery(userQuery: string = DEFAULT_QUERY): Promise<string> {
+let cachedCoinGeckoAssets = null;
+async function fetchAllCoinGeckoAssets() {
+  if (cachedCoinGeckoAssets) return cachedCoinGeckoAssets;
+  const url = "https://api.coingecko.com/api/v3/coins/list";
+  const { data } = await axios.get(url);
+  cachedCoinGeckoAssets = data;
+  return data;
+}
+
+function isTokenInCoinGecko(tokenName, assets) {
+  const lower = tokenName.toLowerCase();
+  return assets.some(
+    (a) =>
+      a.name.toLowerCase() === lower ||
+      a.symbol.toLowerCase() === lower ||
+      a.id.toLowerCase() === lower
+  );
+}
+
+
+export async function processCryptoQuery(userQuery = DEFAULT_QUERY) {
   try {
     console.log(`Processing query: "${userQuery}"`);
-    
-    // Generate synonym queries
     const synonymResponse = await generateSynonyms(userQuery);
     console.log(`Total synonyms parsed from model: ${synonymResponse.synonyms.length}`);
     console.log('📝 Synonyms:', synonymResponse.synonyms);
-    
-    // Search for content using all queries
     const searchQueries = [userQuery, ...synonymResponse.synonyms];
     console.log(`Will send ${searchQueries.length} queries to Exa (including original query).`);
     const searchResult = await searchWithExa(searchQueries);
     console.log(`Found ${searchResult.urls.length} URLs`);
-    
-    // Scrape content from search results
     const scraper = new UniversalScraper();
     let scrapedContents = await scraper.scrapeMultiple(searchResult.urls);
     console.log(`Scraped ${scrapedContents.length} sources successfully`);
-    
     if (scrapedContents.length < searchResult.urls.length) {
       console.log(`⚠️ Failed to scrape ${searchResult.urls.length - scrapedContents.length} URLs`);
     }
-
-    // Extract crypto tokens from the query
     const detectedTokens = extractCryptoTokens(userQuery);
     console.log(`🔍 Detected tokens from query: ${detectedTokens.map(t => t.name).join(', ')}`);
-    
-    // Check token coverage in scraped content
-    const tokenCoverage: {[key: string]: number} = {};
-    detectedTokens.forEach(token => {
-      const count = scrapedContents.filter(c => 
-        token.patterns.some(pattern => 
+    const allAssets = await fetchAllCoinGeckoAssets();
+    const realTokens = detectedTokens.filter(token =>
+      isTokenInCoinGecko(token.name, allAssets)
+    );
+    const fakeTokens = detectedTokens.filter(token =>
+      !isTokenInCoinGecko(token.name, allAssets)
+    );
+    if (fakeTokens.length > 0) {
+      console.log(`⚠️ Unrecognized/fake assets: ${fakeTokens.map(t => t.name).join(", ")}`);
+    }
+    const tokenCoverage = {};
+    realTokens.forEach(token => {
+      const count = scrapedContents.filter(c =>
+        token.patterns.some(pattern =>
           pattern.test(c.title + ' ' + c.cleanedContent)
         )
       ).length;
       tokenCoverage[token.name] = count;
     });
     console.log('🎯 Initial token coverage in scraped content:', tokenCoverage);
-    
-    // Find tokens with insufficient coverage
-    const missingTokens = detectedTokens.filter(token => {
+    const missingTokens = realTokens.filter(token => {
       const coverage = tokenCoverage[token.name] || 0;
       return coverage === 0;
     });
-    
-    // Search specifically for missing tokens
     if (missingTokens.length > 0) {
       console.log(`\n⚠️ Found ${missingTokens.length} tokens with insufficient coverage. Searching specifically...`);
       const existingUrls = searchResult.urls.slice();
       const additionalContents = await searchForMissingTokens(missingTokens, existingUrls);
-      
       if (additionalContents.length > 0) {
         scrapedContents = [...scrapedContents, ...additionalContents];
         console.log(`✅ Added ${additionalContents.length} additional sources for missing tokens`);
-        
-        // Update token coverage
-        detectedTokens.forEach(token => {
-          const count = scrapedContents.filter(c => 
-            token.patterns.some(pattern => 
+        realTokens.forEach(token => {
+          const count = scrapedContents.filter(c =>
+            token.patterns.some(pattern =>
               pattern.test(c.title + ' ' + c.cleanedContent)
             )
           ).length;
@@ -83,14 +93,10 @@ export async function processCryptoQuery(userQuery: string = DEFAULT_QUERY): Pro
     } else {
       console.log(`✅ All tokens have adequate coverage`);
     }
-    
-    // Generate final analysis
     console.log('\n🔬 Starting final analysis with Gemini...');
     const finalAnalysis = await generateFinalAnalysis(userQuery, synonymResponse.synonyms, scrapedContents);
-    
     console.log("\n=== FINAL ANALYSIS ===");
     console.log(finalAnalysis);
-    
     return finalAnalysis;
   } catch (error) {
     console.error("Error:", error);
@@ -98,9 +104,8 @@ export async function processCryptoQuery(userQuery: string = DEFAULT_QUERY): Pro
   }
 }
 
-// Run the main function if this file is executed directly
+
 if (require.main === module) {
-  // Get query from command line arguments or use default
   const userQuery = process.argv[2] || DEFAULT_QUERY;
   processCryptoQuery(userQuery);
 }
