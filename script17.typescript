@@ -1,0 +1,2 @@
+const pipeline = new CryptoAnalysisPipeline();
+const result = await pipeline.executeAnalysis("Bitcoin price analysis");

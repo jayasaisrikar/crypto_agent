@@ -1,0 +1,112 @@
+const DAGNode = window.DAGNode;
+import { LlmAgent, AgentBuilder } from "@iqai/adk";
+import { google } from "@ai-sdk/google";
+
+export class AnalysisGenerator implements DAGNode {
+  id = 'analysis_generation';
+  dependencies: string[] = [];
+  
+  private agent: LlmAgent | null = null;
+
+  async execute(input: {
+    originalQuery: string;
+    synonyms: string[];
+    processedContent: any[];
+    insights: string[];
+  }): Promise<{ analysis: string }> {
+    console.log('🧠 DAG: Generating final analysis with Gemini...');
+    
+    const analysisPrompt = this.createAnalysisPrompt(
+      input.originalQuery, 
+      input.synonyms, 
+      input.processedContent,
+      input.insights
+    );
+    
+    const agent = await this.getAgent();
+    const analysis = await agent.runner.ask(analysisPrompt);
+    
+    return {
+      analysis: typeof analysis === 'string' ? analysis : JSON.stringify(analysis)
+    };
+  }
+
+  private async getAgent(): Promise<LlmAgent> {
+    if (!this.agent) {
+      const systemPrompt = `You are an expert cryptocurrency analyst with deep knowledge of market trends, technical analysis, and fundamental factors affecting digital asset prices. 
+
+Your task is to provide comprehensive, actionable cryptocurrency analysis based on multiple sources and search queries.
+
+## Analysis Guidelines:
+1. **Synthesize Information**: Combine insights from all provided sources
+2. **Technical Focus**: Include technical indicators, chart patterns, support/resistance levels when relevant
+3. **Market Context**: Consider broader market conditions and trends
+4. **Evidence-Based**: Reference specific sources and data points
+5. **Actionable Insights**: Provide clear takeaways and potential implications
+6. **Balanced Perspective**: Present both bullish and bearish viewpoints when applicable
+
+## Response Format:
+Provide a well-structured analysis that covers:
+- **Executive Summary**: Key findings and current status
+- **Technical Analysis**: Chart patterns, indicators, key levels (if applicable)
+- **Market Drivers**: Fundamental factors and catalysts
+- **Outlook**: Short-term and medium-term projections
+- **Key Takeaways**: Actionable insights for traders/investors
+
+Use clear markdown formatting and reference sources when making specific claims.`;
+
+      this.agent = await AgentBuilder
+        .create("crypto_analyst")
+        .withModel(google("gemini-2.5-flash"))
+        .withDescription("Expert cryptocurrency analyst")
+        .withInstruction(systemPrompt)
+        .build();
+    }
+    return this.agent;
+  }
+
+  private createAnalysisPrompt(originalQuery: string, synonyms: string[], contents: any[], insights: string[]): string {
+    let prompt = `# Enhanced Multi-Query Cryptocurrency Analysis
+**Original Query:** ${originalQuery}
+**Analysis Date:** ${new Date().toLocaleDateString()}
+**Total Queries:** ${synonyms.length + 1}
+**Unique Sources:** ${contents.length}
+
+## Query Variations:
+• Original: "${originalQuery}"
+${synonyms.map((synonym, i) => `• Synonym ${i + 1}: "${synonym}"`).join('\n')}
+
+## Key Insights:
+${insights.length > 0 ? insights.map(insight => `• ${insight}`).join('\n') : '• No specific insights extracted'}
+
+## Source Analysis:
+
+`;
+
+    contents.forEach((content, index) => {
+      prompt += `### Source ${index + 1}: ${content.title}
+**Publisher:** ${content.metadata.source} | **Relevance:** ${(content.metadata.relevanceScore * 100).toFixed(0)}%
+
+**Content:**
+${content.cleanedContent.substring(0, 1500)}${content.cleanedContent.length > 1500 ? '...' : ''}
+
+---
+
+`;
+    });
+
+    prompt += `## Analysis Instructions:
+Based on the above multi-angle coverage of: "${originalQuery}"
+
+Provide comprehensive analysis covering:
+1. Current state and key drivers
+2. Market consensus and conflicts  
+3. Future implications and outlook
+4. Actionable insights with source attribution
+
+Reference high-relevance sources specifically.`;
+
+    return prompt;
+  }
+}
+window.AnalysisGenerator = AnalysisGenerator;

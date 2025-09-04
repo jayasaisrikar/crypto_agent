@@ -1,0 +1,89 @@
+import { LlmAgent, AgentBuilder } from "@iqai/adk";
+import { openai } from "@ai-sdk/openai";
+
+export class SynonymGenerator {
+  private agent: LlmAgent | null = null;
+
+  private async getAgent(): Promise<LlmAgent> {
+    if (!this.agent) {
+      const systemPrompt = `You are a helpful assistant specialized in cryptocurrency insights. Your task is to generate synonym search queries based on the user's question, but only if the question is related to cryptocurrencies like Bitcoin, Ethereum, or any crypto tickers (such as BTC, ETH, SOL, etc.).
+
+Today's date is ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}. Use today's date, month or year if the question requires the latest events and news.
+
+##SINGLE INFERENCE APPROACH WITH ASSET SEGMENTATION:
+•⁠ ⁠Generate ALL synonym queries in ONE response
+•⁠ ⁠If the user asks about MULTIPLE different crypto assets (e.g., "Bitcoin and Ethereum", "BTC, ETH, and SOL"), SEGMENT them into separate queries for each asset
+•⁠ ⁠For each asset, generate 2-3 focused synonym queries
+•⁠ ⁠You can generate MORE than 5 total synonyms if multiple assets are involved but make sure they are not redundant and convey different intuition
+
+## RESPONSE FORMAT:
+Format the response as a valid JSON object with numbered queries:
+{
+  "1": "query one",
+  "2": "query two",
+  "3": "query three",
+  ...
+}
+
+## INSTRUCTIONS:
+1. First, check if the user's question is about cryptocurrencies, prices, factors, trends, or any crypto-related topic
+2. If it's NOT crypto-related, reply only with: "Sorry, please ask about crypto-related insights."
+3. If it IS crypto-related:
+   - Identify ALL crypto assets mentioned (Bitcoin, Ethereum, Solana, etc.)
+   - Generate ALL synonyms for ALL assets in ONE single response
+   - If MULTIPLE assets: SEGMENT into separate focused queries per asset within the same response
+   - If SINGLE asset: generate 2-3 focused synonyms
+   - Make queries short and useful for web searches
+   - Include current month/year if relevant
+   - Number starting from 1
+   - Return valid JSON format
+4. Maximum 3 synonyms per individual asset, but can exceed 5 total if multiple assets
+5. Focus on price analysis, market trends, factors, and current events
+6. IMPORTANT: Each query should focus on ONE specific asset, not combine multiple assets in the same query`;
+
+      this.agent = await AgentBuilder
+        .create("synonym_generator")
+        .withModel(openai("gpt-4o"))
+        .withDescription("Creative cryptocurrency research query generator")
+        .withInstruction(systemPrompt)
+        .build();
+    }
+    return this.agent;
+  }
+
+  async generate(originalQuery: string): Promise<{ synonyms: string[]; isValid: boolean }> {
+    try {
+      const agent = await this.getAgent();
+      const result = await agent.runner.ask(`Generate synonym search queries for: "${originalQuery}"`);
+      const content = typeof result === 'string' ? result : JSON.stringify(result);
+      
+      if (content.includes("Sorry, please ask about crypto-related insights")) {
+        return { synonyms: [], isValid: false };
+      }
+
+      let synonyms: string[] = [];
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const jsonData = JSON.parse(jsonMatch[0]);
+          for (const key in jsonData) {
+            if (jsonData.hasOwnProperty(key) && typeof jsonData[key] === 'string') {
+              const synonym = jsonData[key].trim();
+              if (synonym && synonym !== originalQuery) {
+                synonyms.push(synonym);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        synonyms = [`${originalQuery} analysis`, `${originalQuery} trends`, `${originalQuery} news`];
+      }
+
+      return { synonyms, isValid: true };
+    } catch (error) {
+      console.warn("⚠️ Synonym generation failed:", error);
+      return { synonyms: [], isValid: true };
+    }
+  }
+}
+window.SynonymGenerator = SynonymGenerator;

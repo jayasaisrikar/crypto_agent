@@ -1,0 +1,104 @@
+const DocumentRetriever = window.DocumentRetriever;
+const ContentScraper = window.ContentScraper;
+const VectorStore = window.VectorStore;
+export class RAGRetriever {
+  private documentRetriever: DocumentRetriever;
+  private contentScraper: ContentScraper;
+  private vectorStore: VectorStore;
+
+  constructor() {
+    this.documentRetriever = new DocumentRetriever();
+    this.contentScraper = new ContentScraper();
+    this.vectorStore = new VectorStore();
+  }
+
+  async retrieveContent(searchQueries: string[], detectedTokens: any[]): Promise<{
+    searchResults: any[];
+    scrapedContents: any[];
+    totalCost: number;
+  }> {
+    console.log('🔍 RAG: Retrieving content from multiple sources...');
+    
+    // Step 1: Search for documents
+    const searchResults = await this.documentRetriever.search(searchQueries);
+    
+    // Step 2: Scrape content
+    const scrapedContents = await this.contentScraper.scrapeMultiple(
+      searchResults.map(r => r.url)
+    );
+    
+    // Step 3: Search for missing tokens
+    const missingTokens = this.findMissingTokens(detectedTokens, scrapedContents);
+    if (missingTokens.length > 0) {
+      const additionalContent = await this.searchForMissingTokens(missingTokens, searchResults.map(r => r.url));
+      scrapedContents.push(...additionalContent);
+    }
+    
+    // Step 4: Store in vector store (optional)
+    try {
+      await this.vectorStore.storeDocuments(scrapedContents);
+    } catch (error) {
+      console.warn('⚠️ Vector storage failed:', error);
+    }
+
+    return {
+      searchResults,
+      scrapedContents,
+      totalCost: searchResults.reduce((sum, r) => sum + (r.cost || 0), 0)
+    };
+  }
+
+  private findMissingTokens(detectedTokens: any[], scrapedContents: any[]): any[] {
+    const tokenCoverage: {[key: string]: number} = {};
+    
+    detectedTokens.forEach(token => {
+      const count = scrapedContents.filter(c => 
+        token.patterns.some(pattern => 
+          pattern.test(c.title + ' ' + c.cleanedContent)
+        )
+      ).length;
+      tokenCoverage[token.name] = count;
+    });
+    
+    return detectedTokens.filter(token => tokenCoverage[token.name] === 0);
+  }
+
+  private async searchForMissingTokens(missingTokens: any[], existingUrls: string[]): Promise<any[]> {
+    console.log(`🔄 RAG: Searching for missing tokens: ${missingTokens.map(t => t.name).join(', ')}`);
+    
+    const additionalContents: any[] = [];
+    
+    for (const token of missingTokens) {
+      const specificQueries = [
+        `${token.name} cryptocurrency price analysis`,
+        `${token.name} token market trends technical analysis`,
+        `${token.name} crypto price prediction 2025`
+      ];
+      
+      const tokenResults = await this.documentRetriever.search(specificQueries.slice(0, 1));
+      
+      for (const result of tokenResults) {
+        if (!existingUrls.includes(result.url)) {
+          try {
+            const scrapedContent = await this.contentScraper.scrapeUrl(result.url);
+            const hasTokenContent = token.patterns.some(pattern => 
+              pattern.test(scrapedContent.title + ' ' + scrapedContent.cleanedContent)
+            );
+            
+            if (hasTokenContent) {
+              additionalContents.push(scrapedContent);
+              existingUrls.push(result.url);
+              console.log(`✅ Found content for ${token.name}`);
+              break;
+            }
+          } catch (error) {
+            console.log(`❌ Failed to scrape ${result.url}`);
+          }
+        }
+      }
+    }
+    
+    return additionalContents;
+  }
+}
+window.RAGRetriever = RAGRetriever;

@@ -1,0 +1,35 @@
+import "dotenv/config";
+const CryptoAnalysisPipeline = window.CryptoAnalysisPipeline;
+async function main() {
+  console.log("🚀 Starting RAG+DAG Cryptocurrency Analysis Pipeline...\n");
+  
+  const pipeline = new CryptoAnalysisPipeline();
+  
+  const userQuery = "I want Technical analysis on Shiba Inu and Dogecoin";
+  
+  try {
+    const result = await pipeline.executeAnalysis(userQuery);
+    
+    if (result.success) {
+      console.log("\n" + "=".repeat(70));
+      console.log("📊 CRYPTOCURRENCY ANALYSIS REPORT");
+      console.log("=".repeat(70));
+      console.log(`Query: ${result.originalQuery}`);
+      console.log(`Processing Time: ${result.processingTime}ms`);
+      console.log(`Total Cost: $${result.cost.toFixed(4)}`);
+      console.log(`Synonyms Generated: ${result.synonymGeneration.synonymsUsed.length}`);
+      console.log(`Sources Scraped: ${result.searchResults.scrapedCount}`);
+      
+      console.log("\n🤖 ANALYSIS:");
+      console.log("-".repeat(40));
+      console.log(result.finalAnalysis);
+    } else {
+      console.error("❌ Analysis failed:", result.error);
+    }
+  } catch (error) {
+    console.error("❌ Pipeline error:", error);
+    process.exit(1);
+  }
+}
+
+main().catch(console.error);

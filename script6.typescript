@@ -1,0 +1,92 @@
+const DAGNode = window.DAGNode;
+export interface ScrapedContent {
+  url: string;
+  title: string;
+  content: string;
+  cleanedContent: string;
+  metadata: {
+    relevanceScore: number;
+    wordCount: number;
+    source: string;
+  };
+}
+
+export class ContentProcessor implements DAGNode {
+  id = 'content_processing';
+  dependencies: string[] = [];
+
+  async execute(input: { 
+    scrapedContents: ScrapedContent[]; 
+    searchResults: any[] 
+  }): Promise<{
+    relevantContent: ScrapedContent[];
+    keyInsights: string[];
+    contentSummary: string;
+  }> {
+    console.log('📄 DAG: Processing and filtering content...');
+    
+    // Filter by relevance
+    const relevantContent = this.filterByRelevance(input.scrapedContents);
+    
+    // Extract key insights
+    const keyInsights = this.extractKeyInsights(relevantContent);
+    
+    // Generate content summary
+    const contentSummary = this.generateContentSummary(relevantContent);
+    
+    console.log(`✅ Filtered to ${relevantContent.length} relevant sources`);
+    console.log(`📊 Extracted ${keyInsights.length} key insights`);
+
+    return {
+      relevantContent,
+      keyInsights,
+      contentSummary
+    };
+  }
+
+  private filterByRelevance(contents: ScrapedContent[]): ScrapedContent[] {
+    return contents
+      .filter(content => content.metadata.relevanceScore >= 0.1)
+      .sort((a, b) => b.metadata.relevanceScore - a.metadata.relevanceScore);
+  }
+
+  private extractKeyInsights(contents: ScrapedContent[]): string[] {
+    const insights: string[] = [];
+    
+    for (const content of contents) {
+      const text = content.cleanedContent.toLowerCase();
+      
+      if (text.match(/price.*(?:surge|jump|rally|pump|moon)/i)) {
+        insights.push(`${content.metadata.source}: Reports significant price increases`);
+      }
+      if (text.match(/price.*(?:drop|crash|fall|dump|plummet)/i)) {
+        insights.push(`${content.metadata.source}: Reports significant price decreases`);
+      }
+      if (text.match(/bull.*market|bullish.*sentiment/i)) {
+        insights.push(`${content.metadata.source}: Indicates bullish market sentiment`);
+      }
+      if (text.match(/bear.*market|bearish.*sentiment/i)) {
+        insights.push(`${content.metadata.source}: Indicates bearish market sentiment`);
+      }
+      if (text.match(/adoption|institutional|etf|regulation/i)) {
+        insights.push(`${content.metadata.source}: Covers institutional/regulatory developments`);
+      }
+      if (text.match(/technical.*analysis|support|resistance|chart/i)) {
+        insights.push(`${content.metadata.source}: Provides technical analysis perspective`);
+      }
+    }
+    
+    return [...new Set(insights)].slice(0, 8);
+  }
+
+  private generateContentSummary(contents: ScrapedContent[]): string {
+    const totalSources = contents.length;
+    const avgRelevance = contents.reduce((sum, c) => sum + c.metadata.relevanceScore, 0) / totalSources;
+    const totalWords = contents.reduce((sum, c) => sum + c.metadata.wordCount, 0);
+    const publishers = [...new Set(contents.map(c => c.metadata.source))];
+    
+    return `Analysis based on ${totalSources} sources from ${publishers.length} publishers (${publishers.join(', ')}). 
+Average relevance: ${(avgRelevance * 100).toFixed(0)}%. Total content: ${totalWords.toLocaleString()} words.`;
+  }
+}
+window.ContentProcessor = ContentProcessor;

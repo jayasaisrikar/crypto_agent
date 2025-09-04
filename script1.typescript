@@ -1,0 +1,103 @@
+const DAGExecutor = window.DAGExecutor;
+const RAGRetriever = window.RAGRetriever;
+const QueryProcessor = window.QueryProcessor;
+const ContentProcessor = window.ContentProcessor;
+const AnalysisGenerator = window.AnalysisGenerator;
+export interface AnalysisResult {
+  success: boolean;
+  originalQuery: string;
+  synonymGeneration: {
+    synonymsUsed: string[];
+    processingTime: number;
+    totalQueries: number;
+  };
+  searchResults: {
+    totalResults: number;
+    scrapedCount: number;
+    relevantCount: number;
+  };
+  finalAnalysis: string;
+  cost: number;
+  processingTime: number;
+  timestamp: string;
+  error?: string;
+}
+
+export class CryptoAnalysisPipeline {
+  private dagExecutor: DAGExecutor;
+  private ragRetriever: RAGRetriever;
+
+  constructor() {
+    this.ragRetriever = new RAGRetriever();
+    this.dagExecutor = new DAGExecutor([
+      new QueryProcessor(),
+      new ContentProcessor(),
+      new AnalysisGenerator()
+    ]);
+  }
+
+  async executeAnalysis(userQuery: string): Promise<AnalysisResult> {
+    const startTime = Date.now();
+    
+    try {
+      // Step 1: Query Processing (DAG)
+      const processedQuery = await this.dagExecutor.execute('query_processing', {
+        originalQuery: userQuery,
+        timestamp: new Date().toISOString()
+      });
+
+      // Step 2: Content Retrieval (RAG)
+      const retrievedContent = await this.ragRetriever.retrieveContent(
+        processedQuery.searchQueries,
+        processedQuery.detectedTokens
+      );
+
+      // Step 3: Content Processing (DAG)
+      const processedContent = await this.dagExecutor.execute('content_processing', {
+        scrapedContents: retrievedContent.scrapedContents,
+        searchResults: retrievedContent.searchResults
+      });
+
+      // Step 4: Analysis Generation (DAG)
+      const finalAnalysis = await this.dagExecutor.execute('analysis_generation', {
+        originalQuery: userQuery,
+        synonyms: processedQuery.synonyms,
+        processedContent: processedContent.relevantContent,
+        insights: processedContent.keyInsights
+      });
+
+      return {
+        success: true,
+        originalQuery: userQuery,
+        synonymGeneration: {
+          synonymsUsed: processedQuery.synonyms,
+          processingTime: processedQuery.processingTime,
+          totalQueries: processedQuery.searchQueries.length
+        },
+        searchResults: {
+          totalResults: retrievedContent.searchResults.length,
+          scrapedCount: retrievedContent.scrapedContents.length,
+          relevantCount: processedContent.relevantContent.length
+        },
+        finalAnalysis: finalAnalysis.analysis,
+        cost: retrievedContent.totalCost,
+        processingTime: Date.now() - startTime,
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        originalQuery: userQuery,
+        error: error instanceof Error ? error.message : String(error),
+        synonymGeneration: { synonymsUsed: [], processingTime: 0, totalQueries: 0 },
+        searchResults: { totalResults: 0, scrapedCount: 0, relevantCount: 0 },
+        finalAnalysis: '',
+        cost: 0,
+        processingTime: Date.now() - startTime,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+}
+window.CryptoAnalysisPipeline = CryptoAnalysisPipeline;

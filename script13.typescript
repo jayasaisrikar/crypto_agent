@@ -1,0 +1,19 @@
+export class VectorStore {
+  async storeDocuments(documents: any[]): Promise<void> {
+    console.log(`💾 RAG: Storing ${documents.length} documents in vector store`);
+    
+    // Placeholder for vector storage implementation
+    // Could integrate with Qdrant, Pinecone, etc.
+    
+    console.log(`✅ Documents stored in vector store`);
+  }
+
+  async search(query: string, limit: number = 5): Promise<any[]> {
+    console.log(`🔍 RAG: Vector search for: "${query}"`);
+    
+    // Placeholder for vector search implementation
+    
+    return [];
+  }
+}
+window.VectorStore = VectorStore;

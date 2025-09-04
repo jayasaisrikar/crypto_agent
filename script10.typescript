@@ -1,0 +1,171 @@
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import { chromium } from 'playwright';
+import { JSDOM } from 'jsdom';
+import { Readability } from '@mozilla/readability';
+
+export interface ScrapedContent {
+  url: string;
+  title: string;
+  content: string;
+  cleanedContent: string;
+  metadata: {
+    relevanceScore: number;
+    wordCount: number;
+    source: string;
+  };
+}
+
+export class ContentScraper {
+  async scrapeMultiple(urls: string[]): Promise<ScrapedContent[]> {
+    console.log(`🕷️ RAG: Scraping ${urls.length} URLs...`);
+    
+    const results = await Promise.allSettled(
+      urls.map(url => this.scrapeUrl(url))
+    );
+    
+    const scrapedResults = results
+      .filter((result): result is PromiseFulfilledResult<ScrapedContent> => 
+        result.status === 'fulfilled'
+      )
+      .map(result => result.value);
+
+    console.log(`✅ Successfully scraped ${scrapedResults.length}/${urls.length} URLs`);
+    return scrapedResults;
+  }
+
+  async scrapeUrl(url: string): Promise<ScrapedContent> {
+    console.log(`🔍 Scraping: ${url}`);
+    
+    const [axiosCheerio, playwrightCheerio, axiosReadability, playwrightReadability] = await Promise.allSettled([
+      this.axiosCheerio(url),
+      this.playwrightCheerio(url),
+      this.axiosReadability(url),
+      this.playwrightReadability(url)
+    ]);
+
+    const results = [
+      { method: 'axios-cheerio', result: axiosCheerio },
+      { method: 'playwright-cheerio', result: playwrightCheerio },
+      { method: 'axios-readability', result: axiosReadability },
+      { method: 'playwright-readability', result: playwrightReadability }
+    ].filter(r => r.result.status === 'fulfilled' && (r.result as PromiseFulfilledResult<any>).value.content)
+     .map(r => ({ ...(r.result as PromiseFulfilledResult<any>).value, method: r.method }));
+
+    if (!results.length) {
+      throw new Error('All scraping methods failed');
+    }
+
+    const best = results.reduce((max, curr) => 
+      curr.content.length > max.content.length ? curr : max
+    );
+    
+    console.log(`✅ Best method: ${best.method} (${best.content.length} chars)`);
+
+    return this.buildScrapedContent(url, best.content, best.html);
+  }
+
+  private async axiosCheerio(url: string) {
+    const { data } = await axios.get(url, {
+      headers: { 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+      },
+      timeout: 15000
+    });
+    const content = this.extractContentCheerio(data);
+    return { content, html: data };
+  }
+
+  private async playwrightCheerio(url: string) {
+    const browser = await chromium.launch();
+    const page = await browser.newPage();
+    await page.goto(url, { timeout: 15000, waitUntil: 'networkidle' });
+    const html = await page.content();
+    await browser.close();
+    const content = this.extractContentCheerio(html);
+    return { content, html };
+  }
+
+  private async axiosReadability(url: string) {
+    const { data } = await axios.get(url, {
+      headers: { 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      timeout: 15000
+    });
+    const content = this.extractContentReadability(data, url);
+    return { content, html: data };
+  }
+
+  private async playwrightReadability(url: string) {
+    const browser = await chromium.launch();
+    const page = await browser.newPage();
+    await page.goto(url, { timeout: 15000, waitUntil: 'networkidle' });
+    const html = await page.content();
+    await browser.close();
+    const content = this.extractContentReadability(html, url);
+    return { content, html };
+  }
+
+  private extractContentCheerio(html: string): string {
+    const $ = cheerio.load(html);
+    $('script, style, nav, header, footer, aside, .advertisement, .ad, .sidebar').remove();
+
+    const contentSelectors = [
+      'article', 'main', '.content', '.post', '.entry', 
+      '.article-content', '.post-content', '.entry-content',
+      '.container', '.wrapper', 'body'
+    ];
+    
+    let content = '';
+    for (const selector of contentSelectors) {
+      content = $(selector).first().text();
+      if (content && content.length > 200) break;
+    }
+    
+    if (!content || content.length < 100) {
+      content = $('body').text();
+    }
+    
+    return content.replace(/\s+/g, ' ').trim();
+  }
+
+  private extractContentReadability(html: string, url: string): string {
+    try {
+      const dom = new JSDOM(html, { url });
+      const reader = new Readability(dom.window.document);
+      const article = reader.parse();
+      return article?.textContent ? article.textContent.replace(/\s+/g, ' ').trim() : '';
+    } catch (error) {
+      return this.extractContentCheerio(html);
+    }
+  }
+
+  private buildScrapedContent(url: string, content: string, html: string): ScrapedContent {
+    let title = 'No Title';
+    try {
+      const $ = cheerio.load(html);
+      title = $('h1').first().text().trim() || $('title').text().trim() || 'No Title';
+    } catch (error) {
+      title = 'No Title';
+    }
+    
+    const cleanedContent = content.substring(0, 8000);
+    const wordCount = cleanedContent.split(/\s+/).length;
+    const relevanceScore = Math.max(0.3, Math.min(0.9, wordCount / 800));
+
+    return {
+      url,
+      title,
+      content,
+      cleanedContent,
+      metadata: {
+        relevanceScore,
+        wordCount,
+        source: new URL(url).hostname
+      }
+    };
+  }
+}
+window.ContentScraper = ContentScraper;

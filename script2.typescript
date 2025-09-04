@@ -1,0 +1,32 @@
+export interface DAGNode {
+  id: string;
+  execute(input: any): Promise<any>;
+  dependencies: string[];
+}
+
+export class DAGExecutor {
+  private nodes: Map<string, DAGNode> = new Map();
+
+  constructor(nodes: DAGNode[]) {
+    nodes.forEach(node => this.nodes.set(node.id, node));
+  }
+
+  async execute(nodeId: string, input: any): Promise<any> {
+    const node = this.nodes.get(nodeId);
+    if (!node) {
+      throw new Error(`Node ${nodeId} not found`);
+    }
+
+    // Execute dependencies first
+    const dependencyResults = {};
+    for (const depId of node.dependencies) {
+      if (this.nodes.has(depId)) {
+        dependencyResults[depId] = await this.execute(depId, input);
+      }
+    }
+
+    // Execute current node with dependency results
+    return await node.execute({ ...input, dependencies: dependencyResults });
+  }
+}
+window.DAGExecutor = DAGExecutor;

@@ -1,0 +1,48 @@
+const DAGNode = window.DAGNode;
+const SynonymGenerator = window.SynonymGenerator;
+const CryptoTokenDetector = window.CryptoTokenDetector;
+export class QueryProcessor implements DAGNode {
+  id = 'query_processing';
+  dependencies: string[] = [];
+  
+  private synonymGenerator: SynonymGenerator;
+  private tokenDetector: CryptoTokenDetector;
+
+  constructor() {
+    this.synonymGenerator = new SynonymGenerator();
+    this.tokenDetector = new CryptoTokenDetector();
+  }
+
+  async execute(input: { originalQuery: string; timestamp: string }): Promise<{
+    originalQuery: string;
+    synonyms: string[];
+    searchQueries: string[];
+    detectedTokens: Array<{name: string, patterns: RegExp[]}>;
+    processingTime: number;
+  }> {
+    const startTime = Date.now();
+    
+    console.log('🔍 DAG: Processing query and generating synonyms...');
+    
+    // Generate synonyms
+    const synonymResponse = await this.synonymGenerator.generate(input.originalQuery);
+    
+    // Detect crypto tokens
+    const detectedTokens = this.tokenDetector.extract(input.originalQuery);
+    
+    // Build search queries
+    const searchQueries = [input.originalQuery, ...synonymResponse.synonyms];
+    
+    console.log(`✅ Generated ${synonymResponse.synonyms.length} synonyms`);
+    console.log(`🎯 Detected ${detectedTokens.length} crypto tokens`);
+
+    return {
+      originalQuery: input.originalQuery,
+      synonyms: synonymResponse.synonyms,
+      searchQueries,
+      detectedTokens,
+      processingTime: Date.now() - startTime
+    };
+  }
+}
+window.QueryProcessor = QueryProcessor;

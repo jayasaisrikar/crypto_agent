@@ -1,0 +1,99 @@
+import { Exa } from "exa-js";
+
+export class DocumentRetriever {
+  private exa: Exa;
+
+  constructor() {
+    this.exa = new Exa(process.env.EXA_API_KEY!);
+  }
+
+  async search(queries: string[]): Promise<any[]> {
+    console.log(`🔍 RAG: Document retrieval for ${queries.length} queries`);
+    
+    const searchOptions: any = {
+      type: "auto",
+      numResults: 3,
+      text: false,
+      summary: true
+    };
+
+    const batchResults = await this.batchProcessWithRateLimit(
+      queries,
+      5,
+      async (query) => {
+        try {
+          const result = await this.exa.searchAndContents(query, searchOptions);
+          console.log(`✅ Query "${query}" returned ${result.results.length} results`);
+          return result.results.map((item: any) => ({
+            url: item.url,
+            title: item.title || 'No Title',
+            publishedDate: item.publishedDate || 'Unknown Date',
+            query: query,
+            cost: result.costDollars?.total || 0
+          }));
+        } catch (error) {
+          console.log(`⚠️ Search failed for query: "${query}"`);
+          return [];
+        }
+      },
+      1000
+    );
+
+    const allResults = batchResults.flat().filter(Boolean).flat();
+    return this.deduplicateAndSort(allResults);
+  }
+
+  private async batchProcessWithRateLimit<T, R>(
+    items: T[],
+    batchSize: number,
+    fn: (item: T) => Promise<R>,
+    minDelayMs: number = 1000,
+    maxRetries: number = 4
+  ): Promise<R[]> {
+    const results: R[] = [];
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(async (item) => {
+          let attempt = 0;
+          let delay = 1000;
+          while (true) {
+            try {
+              return await fn(item);
+            } catch (err: any) {
+              if (err?.response?.status === 429 || (err?.message && /rate.?limit/i.test(err.message))) {
+                if (attempt < maxRetries) {
+                  attempt++;
+                  console.warn(`⏳ Rate limit hit, retrying in ${delay}ms (attempt ${attempt})...`);
+                  await new Promise(res => setTimeout(res, delay));
+                  delay *= 2;
+                  continue;
+                }
+              }
+              console.warn(`❌ Query failed after ${attempt} retries:`, err?.message || err);
+              return null;
+            }
+          }
+        })
+      );
+      results.push(...batchResults);
+      if (i + batchSize < items.length) {
+        await new Promise(res => setTimeout(res, minDelayMs));
+      }
+    }
+    return results;
+  }
+
+  private deduplicateAndSort(results: any[]): any[] {
+    const uniqueResults = results.filter((result, index, self) => 
+      index === self.findIndex(r => r.url === result.url)
+    );
+    
+    return uniqueResults.sort((a, b) => {
+      const dateA = new Date(a.publishedDate || '1900-01-01');
+      const dateB = new Date(b.publishedDate || '1900-01-01');
+      return dateB.getTime() - dateA.getTime();
+    });
+  }
+}
+window.DocumentRetriever = DocumentRetriever;
